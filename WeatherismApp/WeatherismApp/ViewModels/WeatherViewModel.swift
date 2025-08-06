@@ -6,6 +6,8 @@
 //
 
 import Foundation
+import CoreLocation
+import Combine
 
 // MARK: - Weather ViewModel
 @MainActor
@@ -18,10 +20,45 @@ class WeatherViewModel: ObservableObject {
     
     // MARK: - Dependencies
     private let weatherService: WeatherServiceProtocol
+    private let locationManager = LocationManager()
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
     init(weatherService: WeatherServiceProtocol = WeatherService()) {
         self.weatherService = weatherService
+        setupLocationObserver()
+    }
+    
+    // MARK: - Private Setup Methods
+    private func setupLocationObserver() {
+        // Observe successful location updates
+        locationManager.$location
+            .compactMap { $0 }
+            .sink { [weak self] location in
+                Task {
+                    await self?.fetchWeatherForLocation(location)
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Observe location manager errors
+        locationManager.$errorMessage
+            .compactMap { $0 }
+            .sink { [weak self] error in
+                self?.isLoading = false
+                self?.errorMessage = error
+            }
+            .store(in: &cancellables)
+        
+        // Observe loading state from location manager
+        locationManager.$isRequestingLocation
+            .sink { [weak self] isRequesting in
+                if isRequesting {
+                    self?.isLoading = true
+                    self?.errorMessage = nil
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Public Methods
@@ -38,9 +75,33 @@ class WeatherViewModel: ObservableObject {
     }
     
     func refreshWeather() {
-        guard let location = currentLocation else { return }
-        Task {
-            await fetchWeather(for: location.name)
+        if let location = currentLocation {
+            Task {
+                await fetchWeather(for: location.name)
+            }
+        } else {
+            requestCurrentLocationWeather()
+        }
+    }
+    
+    func requestCurrentLocationWeather() {
+        errorMessage = nil
+        
+        // Check authorization status first
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            // Request permission first
+            locationManager.requestLocationPermission()
+            
+        case .denied, .restricted:
+            errorMessage = "Location access denied. Please enable location access in Settings to get weather for your current location."
+            
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Permission already granted, request location
+            locationManager.requestLocation()
+            
+        @unknown default:
+            errorMessage = "Unable to access location services"
         }
     }
     
@@ -54,6 +115,41 @@ class WeatherViewModel: ObservableObject {
             
             weatherData = weather
             currentLocation = location
+        } catch {
+            errorMessage = error.localizedDescription
+            weatherData = nil
+            currentLocation = nil
+        }
+        
+        isLoading = false
+    }
+    
+    private func fetchWeatherForLocation(_ location: CLLocation) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            // Use reverse geocoding to get city name from coordinates
+            let geocoder = CLGeocoder()
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            
+            guard let placemark = placemarks.first else {
+                errorMessage = "Could not determine location information"
+                isLoading = false
+                return
+            }
+            
+            // Try to get the best available location name
+            let cityName = placemark.locality
+                ?? placemark.administrativeArea
+                ?? placemark.subAdministrativeArea
+                ?? placemark.country
+                ?? "Unknown Location"
+            
+            let (weather, locationResult) = try await weatherService.fetchWeather(for: cityName)
+            
+            weatherData = weather
+            currentLocation = locationResult
         } catch {
             errorMessage = error.localizedDescription
             weatherData = nil
@@ -127,7 +223,7 @@ class WeatherViewModel: ObservableObject {
     }
     
     var locationDisplayName: String {
-        guard let location = currentLocation else { return "Unknown" }
+        guard let location = currentLocation else { return "Current Location" }
         return "\(location.name), \(location.country)"
     }
     

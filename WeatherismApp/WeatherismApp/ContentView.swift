@@ -10,7 +10,8 @@ import SwiftUI
 // MARK: - Content View
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel()
-    @State private var cityName = "London"
+    @State private var cityName = ""
+    @State private var showEmptyFieldError = false
     
     var body: some View {
         NavigationView {
@@ -22,48 +23,81 @@ struct ContentView: View {
                 
                 VStack(spacing: 20) {
                     // Search bar
-                    HStack {
-                        TextField("Enter city name", text: $cityName)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .onSubmit {
-                                viewModel.searchWeather(for: cityName)
+                    VStack(spacing: 8) {
+                        HStack {
+                            TextField("Enter city name", text: $cityName)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .onSubmit {
+                                    searchWeather()
+                                }
+                                .submitLabel(.search)
+                                .onChange(of: cityName) { _, _ in
+                                    // Hide error when user starts typing
+                                    if showEmptyFieldError {
+                                        showEmptyFieldError = false
+                                    }
+                                }
+                            
+                            Button("Search") {
+                                searchWeather()
                             }
-                            .submitLabel(.search)
-                        
-                        Button("Search") {
-                            viewModel.searchWeather(for: cityName)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(viewModel.isLoading)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(viewModel.isLoading || cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        
+                        // Show empty field error
+                        if showEmptyFieldError {
+                            HStack {
+                                Text("Please enter a city name")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                        }
                     }
                     .padding(.horizontal)
                     
                     if viewModel.isLoading {
-                        ProgressView("Loading weather...")
-                            .foregroundColor(.white)
-                    } else if viewModel.hasError, let errorMessage = viewModel.errorMessage {
                         VStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+                            Text("Loading weather...")
+                                .foregroundColor(.white)
+                                .padding(.top, 8)
+                        }
+                    } else if viewModel.hasError, let errorMessage = viewModel.errorMessage {
+                        VStack(spacing: 16) {
                             Image(systemName: "exclamationmark.triangle")
                                 .font(.system(size: 60))
                                 .foregroundColor(.red)
                             Text(errorMessage)
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                            
+                            // Retry button
+                            Button("Try Again") {
+                                viewModel.requestCurrentLocationWeather()
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
                         .padding()
                     } else if viewModel.hasWeatherData, let weather = viewModel.weatherData {
                         WeatherView(weather: weather, viewModel: viewModel)
                     } else {
                         VStack(spacing: 20) {
-                            Image(systemName: "cloud.sun")
+                            Image(systemName: "location.circle")
                                 .font(.system(size: 80))
                                 .foregroundColor(.white)
                             Text("Welcome to Weatherism")
                                 .font(.title)
                                 .foregroundColor(.white)
-                            Text("Enter a city name to get started")
+                            Text("Getting weather for your location...")
                                 .foregroundColor(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
                         }
+                        .padding()
                     }
                     
                     Spacer()
@@ -80,13 +114,27 @@ struct ContentView: View {
                         Image(systemName: "arrow.clockwise")
                             .foregroundColor(.white)
                     }
-                    .disabled(viewModel.isLoading || !viewModel.hasWeatherData)
+                    .disabled(viewModel.isLoading)
                 }
             }
             .onAppear {
-                viewModel.searchWeather(for: cityName)
+                // Automatically get current location weather when app appears
+                viewModel.requestCurrentLocationWeather()
             }
         }
+    }
+    
+    // MARK: - Private Methods
+    private func searchWeather() {
+        let trimmedCity = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if trimmedCity.isEmpty {
+            showEmptyFieldError = true
+            return
+        }
+        
+        showEmptyFieldError = false
+        viewModel.searchWeather(for: trimmedCity)
     }
     
     // MARK: - Computed Properties

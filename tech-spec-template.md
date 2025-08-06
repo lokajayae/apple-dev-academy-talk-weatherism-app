@@ -1,68 +1,145 @@
-- Tech Spec : <Feature Name>
-- Author : <Author Name>
-- Engineering Lead : <Eng Lead name>
-- Product Specs : <Link to product specs, if any>
-- Important Documents : <Link to other important documents>
-- JIRA Epic : <Link to jira epic ticket>
-- Figma : <Link to figma / design file> 
-- Figma Prototype : <Or protopie link...>
-- BE Tech Specs : <if BE have tech specs...>
-- Content Specs : <if need localization...>
-- Instrumentation Specs : <if need to track user action / data...>
-- QA Test Suite : <link to QA test suite>
-- PICs : <name of the PICs of function, ex: PIC BE, PIC PM, PIC Designer, PIC FE, QA, PA, TPM etc>
+# Tech Spec: Current Location Weather Feature
 
-Project Overview
-=================
-<Why project created, some short summary is okay...>
+- **Tech Spec**: Current Location Weather Feature
+- **Author**: Evan Lokajaya
+- **Engineering Lead**: -
+- **Product Specs**: N/A (Personal Project)
+- **Important Documents**: N/A
+- **JIRA Epic**: N/A
+- **Figma**: N/A
+- **Figma Prototype**: N/A
+- **BE Tech Specs**: N/A (Uses Open-Meteo API)
+- **Content Specs**: N/A
+- **Instrumentation Specs**: N/A
+- **QA Test Suite**: Manual testing
+- **PICs**: 
+  - PIC iOS Developer: -
+  - PIC Designer: -
+  - PIC QA: -
 
+## Project Overview
 
-Requirements
-=================
-Functional Requirements
-- <list down requirement that needs to be there to create the feature. Ex: feature need to show certain component under certain condition>
+The WeatherismApp enhancement adds automatic current location weather detection to provide users with immediate access to their local weather conditions upon app launch. Previously, the app defaulted to showing London weather, requiring users to manually search for their location. This feature improves user experience by automatically detecting and displaying weather for the user's current geographic location.
 
-Non Functional Requirements
-- <some system requirements, ex: expected max CPU increase, FPS, etc>
+## Requirements
 
-High-Level Diagram 
-- <High level Flow chart>
+### Functional Requirements
 
-Low-Level Diagram
-- <Flow chart containing the service name etc, or swimlane stuffs>
+- App must automatically request location permission on first launch
+- App must detect user's current geographic coordinates using Core Location
+- App must convert coordinates to city name using reverse geocoding
+- App must fetch and display weather data for the detected location
+- App must show appropriate loading states during location detection
+- App must handle location permission denial gracefully with clear error messages
+- App must provide retry mechanism when location detection fails
+- App must maintain existing manual city search functionality
+- App must validate empty city name input and show error messages
+- App must clear validation errors when user starts typing
 
-Code Structure & Implementation Details
-========================================
-<Some pseudo-code on code-change plan and the logic>
+### Non Functional Requirements
 
-Operational Excellence
-=======================
-<alert and monitoring link, like datadog dashboard for example>
+- Location detection should complete within 10 seconds under normal conditions
+- App should maintain 60 FPS during location detection process
+- Memory usage should not increase by more than 5MB for location services
+- Battery impact should be minimal (single location request, not continuous tracking)
+- App should handle network failures gracefully with appropriate error messages
 
-Backward Compatibility / Rollback Plan
-======================================
-<outline plan for backward compatibility / rollback plan if needed>
+## High-Level Diagram
 
-Rollout Plan
-============
-<how we will roll out, ex: phased rollout according to app version? Or feature control / feature flag change?>
+```
+App Launch → Request Location Permission → Get Coordinates → Reverse Geocoding → Fetch Weather → Display UI
+     ↓              ↓                           ↓                ↓               ↓
+Error Handling → Permission Denied → Location Failed → Geocoding Failed → API Failed
+     ↓
+Show Error + Retry Button
+```
 
-Out of scope
-============
-<list down things that is out of scope>
+## Low-Level Diagram
 
-Demo
-====
-<screenshot, screen record>
- 
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   ContentView   │    │ WeatherViewModel │    │ LocationManager │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                       │                       │
+         │ onAppear              │                       │
+         │──────────────────────→│                       │
+         │                       │ requestCurrentLocation│
+         │                       │──────────────────────→│
+         │                       │                       │ CLLocationManager
+         │                       │                       │ requestPermission
+         │                       │                       │
+         │                       │ location updated      │
+         │                       │←──────────────────────│
+         │                       │                       │
+         │                       │ reverseGeocode       │
+         │                       │ (CLGeocoder)         │
+         │                       │                       │
+         │                       │ fetchWeather         │
+         │                       │ (WeatherService)     │
+         │                       │                       │
+         │ UI Update             │                       │
+         │←──────────────────────│                       │
+```
 
-Steps to use this feature
-==========================
-<list down way to use this feature, ex: from which entry point, what to click, where to click, etc> 
+## Code Structure & Implementation Details
 
-Discussions and Alignments
-==========================
-Q: 
-A: 
+### New Components Added:
 
+1. **LocationManager.swift**
+   ```swift
+   class LocationManager: ObservableObject {
+       @Published var location: CLLocation?
+       @Published var authorizationStatus: CLAuthorizationStatus
+       @Published var errorMessage: String?
+       @Published var isRequestingLocation: Bool
+   }
+   ```
 
+2. **Enhanced WeatherViewModel.swift**
+   ```swift
+   // Added location management
+   private let locationManager = LocationManager()
+   private var cancellables = Set<AnyCancellable>()
+   
+   // New methods
+   func requestCurrentLocationWeather()
+   func fetchWeatherForLocation(_ location: CLLocation)
+   ```
+
+3. **Updated ContentView.swift**
+   ```swift
+   // Added validation state
+   @State private var showEmptyFieldError = false
+   
+   // Enhanced search validation
+   private func searchWeather() {
+       // Validate input and show errors
+   }
+   ```
+
+### Key Implementation Changes:
+
+- **Automatic Location Request**: App requests location permission and weather on launch
+- **Permission Flow**: Proper handling of all location permission states
+- **Error Handling**: Specific error messages for different failure scenarios  
+- **Input Validation**: Client-side validation for empty city searches
+- **Reactive UI**: Real-time updates based on location manager state changes
+
+## Operational Excellence
+
+- **Error Tracking**: Location permission errors, API failures, and geocoding failures are logged
+- **Performance Monitoring**: Location request timeout monitoring
+- **User Experience Metrics**: Success rate of automatic location detection
+- **Manual Testing**: Verify functionality across different permission states and network conditions
+
+## Backward Compatibility / Rollback Plan
+
+- **Backward Compatible**: All existing manual search functionality remains unchanged
+- **Graceful Degradation**: If location services fail, app falls back to manual search mode
+- **No Breaking Changes**: Existing WeatherResponse, WeatherService, and UI components unchanged
+- **Rollback Plan**: Remove location-related code and revert to manual search default (London)
+
+## Rollout Plan
+
+- **Phase 1**: Deploy to development environment for testing
+- **Phas
